@@ -11,4 +11,4 @@ Web app (PWA) per tenere traccia delle spese di casa in famiglia, in stile Trico
 In questo repository c'è **solo il codice** dell'app: nessun dato.
 I dati vengono salvati in un foglio Google privato e sono visibili solo agli account autorizzati.
 
-Versione 1: i dati restano salvati sul telefono, in attesa del collegamento al foglio Google.
+Accesso con Google: possono entrare solo gli account autorizzati nello script del foglio.

@@ -5,11 +5,20 @@
    Nel prossimo passo: foglio Google + accesso con Google.
    ========================================================= */
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const LS_KEY = 'gestioneCasa.v1';
 const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MESI_B = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
 const COLORI = ['#5b7cfa','#f06595','#2fcf7f','#ffb547','#22b8cf','#a77bff','#ff8a5b'];
+
+/* ===== Collegamento al foglio Google (da compilare) ===== */
+const CONFIG = {
+  CLIENT_ID: '378542112694-491mbbu198klomqsr9gu67m759t0i485.apps.googleusercontent.com',   // Client ID di Google Cloud (…apps.googleusercontent.com)
+  API_URL:   'https://script.google.com/macros/s/AKfycbx_UKlBm4SKEYtPWrUO9bh1MuMBBKSzJbpgFQj1j9pbW5oFF3bkJL5DevaKj1rF537-wA/exec',   // URL dell'App web di Apps Script (…/exec)
+};
+const ONLINE = !!(CONFIG.CLIENT_ID && CONFIG.API_URL);
+const SESS_KEY = 'gestioneCasa.sessione';
+const CODA_KEY = 'gestioneCasa.coda';
 
 const CATEGORIE_BASE = [
   { id:'spesa',        name:'Spesa supermercato', emoji:'🛒' },
@@ -49,6 +58,7 @@ let ui = { view:'home', houseId:null, tab:'spese', filtro:'tutte', year:null, pa
 let ed = null;          // dati del pannello aperto
 let sheetOpen = false;
 let skipPop = 0;
+let SESS = null, coda = [], statoSync = '', inviando = false;
 const A = {}; window.A = A;
 
 function carica(){
@@ -57,8 +67,17 @@ function carica(){
   // sicurezza: campi mancanti
   const base = statoIniziale();
   for (const k of Object.keys(base)) if (S[k] == null) S[k] = base[k];
+  try { SESS = JSON.parse(localStorage.getItem(SESS_KEY) || 'null'); } catch(e){ SESS = null; }
+  try { coda = JSON.parse(localStorage.getItem(CODA_KEY) || '[]'); } catch(e){ coda = []; }
+  if (!ONLINE) SESS = null;
+  if (SESS && SESS.me) S.settings.me = SESS.me;
 }
 function salva(){ try { localStorage.setItem(LS_KEY, JSON.stringify(S)); } catch(e){} }
+function salvaSess(){ try { SESS ? localStorage.setItem(SESS_KEY, JSON.stringify(SESS)) : localStorage.removeItem(SESS_KEY); } catch(e){} }
+function salvaCoda(){ try { localStorage.setItem(CODA_KEY, JSON.stringify(coda)); } catch(e){} }
+const puoModificare = () => !ONLINE || !!(SESS && SESS.admin);
+const impostazioniAttuali = () => ({ people:S.people, houses:S.houses, categories:S.categories });
+function salvaImp(){ salva(); invia('saveSettings', { settings:impostazioniAttuali() }); }
 
 /* ---------- Utilità ---------- */
 const $ = (s, el=document) => el.querySelector(s);
@@ -122,6 +141,7 @@ function pareggia(b){
 /* ---------- Disegno delle schermate ---------- */
 function render(){
   const app = $('#app');
+  if (ONLINE && !SESS){ app.innerHTML = vLogin(); mostraBottoneGoogle(); return; }
   if (ui.view==='house' && casa(ui.houseId)) app.innerHTML = vCasa();
   else if (ui.view==='settings') app.innerHTML = vImpostazioni();
   else { ui.view='home'; app.innerHTML = vHome(); }
@@ -133,9 +153,10 @@ function vai(view, extra){
 }
 
 function header(titolo, destra='', indietro=false){
-  return `<header class="top">${indietro ? `<button class="icon-btn" onclick="A.indietro()" aria-label="Indietro">‹</button>` : '<span class="logo">🏠</span>'}<h1>${esc(titolo)}</h1>${destra}</header>`;
+  return `<header class="top">${indietro ? `<button class="icon-btn" onclick="A.indietro()" aria-label="Indietro">‹</button>` : '<span class="logo">🏠</span>'}<h1>${esc(titolo)}</h1>${ONLINE ? `<button class="sync" id="sync" onclick="A.sincronizza()" aria-label="Sincronizza">${testoStato()}</button>` : ''}${destra}</header>`;
 }
 function banner(){
+  if (ONLINE) return '';
   return `<div class="banner">📱 Versione di prova: i dati restano solo su questo telefono. Il collegamento al foglio Google arriva nel prossimo passo.</div>`;
 }
 
@@ -156,11 +177,11 @@ function vHome(){
       <div class="house-bal">${st}</div>
     </button>`;
   }).join('');
-  const vuoto = (!S.expenses.length && !S.transfers.length)
+  const vuoto = (!ONLINE && !S.expenses.length && !S.transfers.length)
     ? `<div class="card hint"><p>👋 Ciao! Tocca la casa e aggiungi la prima spesa.</p><button class="btn ghost full" onclick="A.caricaEsempio()">🧪 Prova con dati di esempio</button></div>` : '';
   return header('Gestione Casa', `<button class="icon-btn" onclick="A.apriImpostazioni()" aria-label="Impostazioni">⚙️</button>`)
     + `<main class="wrap">${banner()}${vuoto}<div class="grid">${cards}
-      <button class="card house add" onclick="A.modificaCasa()"><span class="big-emoji">➕</span><div class="house-sub">Nuova casa</div></button></div></main>`;
+      ${puoModificare() ? `<button class="card house add" onclick="A.modificaCasa()"><span class="big-emoji">➕</span><div class="house-sub">Nuova casa</div></button>` : ''}</div></main>`;
 }
 
 /* Dentro una casa */
@@ -330,6 +351,12 @@ function tInsight(h){
 
 /* Impostazioni */
 function vImpostazioni(){
+  const account = ONLINE && SESS ? `<h2>Account</h2>
+    <div class="row">${avatar(SESS.me)}<span class="mid"><b>${esc(persona(SESS.me).name)}${SESS.admin?' <span class="tag">admin</span>':''}</b><small>${esc(SESS.email)}</small></span></div>
+    ${SESS.admin && SESS.sheetUrl ? `<a class="btn ghost full" href="${esc(SESS.sheetUrl)}" target="_blank" rel="noopener">📄 Apri il foglio Google</a>` : ''}
+    <button class="btn ghost danger full" onclick="A.esci()">🚪 Esci</button>` : '';
+  if (ONLINE && !puoModificare())
+    return header('Impostazioni', '', true) + `<main class="wrap">${account}<p class="note">Persone, case e categorie le gestisce l'amministratore.</p><p class="note center">Gestione Casa v${APP_VERSION}</p></main>`;
   const persone = S.people.map(p => `<div class="row">${avatar(p.id)}
       <input class="inline" value="${esc(p.name)}" onchange="A.rinominaPersona('${p.id}',this.value)">
       <button class="icon-btn sm" onclick="A.coloreP('${p.id}')" aria-label="Cambia colore">🎨</button>
@@ -340,9 +367,9 @@ function vImpostazioni(){
       <span class="mid"><b>${esc(c.name)}</b><small>${c.group?'Bolletta':'Categoria'}${c.base?'':' · aggiunta da te'}</small></span>
       ${c.base ? '' : `<button class="icon-btn sm" onclick="A.eliminaCategoria('${c.id}')" aria-label="Elimina">🗑️</button>`}</div>`).join('');
   return header('Impostazioni', '', true) + `<main class="wrap">
-    <h2>Chi sono io</h2>
+    ${ONLINE ? account : `<h2>Chi sono io</h2>
     <div class="chips wrapc">${S.people.map(p => `<button class="chip big ${S.settings.me===p.id?'on':''}" onclick="A.io('${p.id}')">${avatar(p.id)} ${esc(p.name)}</button>`).join('')}</div>
-    <p class="note">Serve per mostrarti "ti devono / devi" sulla home. Con l'accesso Google lo capirà da solo.</p>
+    <p class="note">Serve per mostrarti "ti devono / devi" sulla home. Con l'accesso Google lo capirà da solo.</p>`}
     <h2>Persone</h2><div class="list">${persone}</div>
     <button class="btn ghost full" onclick="A.aggiungiPersona()">➕ Aggiungi persona</button>
     <h2>Case</h2><div class="list">${case_}</div>
@@ -352,9 +379,9 @@ function vImpostazioni(){
       <div class="two small-first"><input id="nc-emoji" placeholder="🏷️" maxlength="8"><input id="nc-name" placeholder="Nome (es. Pulizie)"></div>
       <label class="checkline"><input type="checkbox" id="nc-boll"> È una bolletta</label>
       <button class="btn full" onclick="A.aggiungiCategoria()">Aggiungi categoria</button></div>
-    <h2>Dati</h2>
+    ${ONLINE ? '' : `<h2>Dati</h2>
     <button class="btn ghost full" onclick="A.caricaEsempio()">🧪 Carica dati di esempio</button>
-    <button class="btn ghost danger full" onclick="A.cancellaTutto()">🗑️ Cancella tutti i dati</button>
+    <button class="btn ghost danger full" onclick="A.cancellaTutto()">🗑️ Cancella tutti i dati</button>`}
     <p class="note center">Gestione Casa v${APP_VERSION}</p></main>`;
 }
 
@@ -517,15 +544,16 @@ A.salvaSpesa = () => {
   const shares = {}; for (const k in q.shares) if (q.shares[k]>0) shares[k] = q.shares[k];
   const now = Date.now(); const eraModifica = !!ed.id;
   const dati = { amount:tot, cat:ed.cat, desc:ed.desc.trim(), date:ed.date||oggi(), payer:ed.payer, shares, updatedAt:now };
-  if (eraModifica) Object.assign(S.expenses.find(x => x.id===ed.id), dati);
-  else S.expenses.push({ id:uid('e'), houseId:ed.houseId, ...dati, createdBy:S.settings.me, createdAt:now });
-  salva(); A.chiudi(); render();
+  let spesa;
+  if (eraModifica){ spesa = S.expenses.find(x => x.id===ed.id); Object.assign(spesa, dati); }
+  else { spesa = { id:uid('e'), houseId:ed.houseId, ...dati, createdBy:S.settings.me, createdAt:now }; S.expenses.push(spesa); }
+  salva(); invia('saveExpense', { expense:spesa }); A.chiudi(); render();
   toast(eraModifica ? 'Modifiche salvate ✓' : 'Spesa aggiunta ✓');
 };
 A.eliminaSpesa = () => {
   const id = ed.id;
   chiedi('Eliminare questa spesa?', 'Elimina', () => {
-    S.expenses = S.expenses.filter(e => e.id!==id); salva(); A.chiudi(); render(); toast('Spesa eliminata');
+    S.expenses = S.expenses.filter(e => e.id!==id); salva(); invia('deleteExpense', { id }); A.chiudi(); render(); toast('Spesa eliminata');
   }, true);
 };
 
@@ -533,8 +561,8 @@ A.eliminaSpesa = () => {
 A.segnaRimborsato = i => {
   const t = ui.pareggi[i]; if (!t) return;
   chiedi(`${esc(persona(t.from).name)} ha dato ${euro(t.amount)} a ${esc(persona(t.to).name)}?`, 'Sì, fatto', () => {
-    S.transfers.push({ id:uid('t'), houseId:ui.houseId, from:t.from, to:t.to, amount:t.amount, date:oggi(), createdBy:S.settings.me, createdAt:Date.now() });
-    salva(); render(); toast('Rimborso registrato ✓');
+    const tr = { id:uid('t'), houseId:ui.houseId, from:t.from, to:t.to, amount:t.amount, date:oggi(), createdBy:S.settings.me, createdAt:Date.now() };
+    S.transfers.push(tr); salva(); invia('saveTransfer', { transfer:tr }); render(); toast('Rimborso registrato ✓');
   });
 };
 A.nuovoRimborso = () => {
@@ -562,13 +590,13 @@ A.salvaRimborso = () => {
   const tot = parseEuro(ed.amount);
   if (!(tot>0)) return $('#f-err').textContent = 'Scrivi l\'importo';
   if (ed.from===ed.to) return $('#f-err').textContent = 'Scegli due persone diverse';
-  S.transfers.push({ id:uid('t'), houseId:ed.houseId, from:ed.from, to:ed.to, amount:tot, date:ed.date||oggi(), createdBy:S.settings.me, createdAt:Date.now() });
-  salva(); A.chiudi(); render(); toast('Rimborso registrato ✓');
+  const tr = { id:uid('t'), houseId:ed.houseId, from:ed.from, to:ed.to, amount:tot, date:ed.date||oggi(), createdBy:S.settings.me, createdAt:Date.now() };
+  S.transfers.push(tr); salva(); invia('saveTransfer', { transfer:tr }); A.chiudi(); render(); toast('Rimborso registrato ✓');
 };
 A.eliminaRimborso = id => {
   const t = S.transfers.find(x => x.id===id); if (!t) return;
   chiedi(`Eliminare il rimborso di ${euro(t.amount)} (${esc(persona(t.from).name)} → ${esc(persona(t.to).name)})?`, 'Elimina', () => {
-    S.transfers = S.transfers.filter(x => x.id!==id); salva(); render(); toast('Rimborso eliminato');
+    S.transfers = S.transfers.filter(x => x.id!==id); salva(); invia('deleteTransfer', { id }); render(); toast('Rimborso eliminato');
   }, true);
 };
 
@@ -612,22 +640,22 @@ A.salvaCasa = () => {
   } else {
     S.houses.push({ id:uid('h'), name:ed.name.trim(), emoji:ed.emoji.trim()||'🏠', members:ed.members, defaultPayer:ed.defaultPayer });
   }
-  salva(); A.chiudi(); render(); toast('Casa salvata ✓');
+  salvaImp(); A.chiudi(); render(); toast('Casa salvata ✓');
 };
 A.eliminaCasa = () => {
   const id = ed.id;
   if (S.expenses.some(e => e.houseId===id) || S.transfers.some(t => t.houseId===id)) return $('#f-err').textContent = 'Questa casa ha delle spese: non si può eliminare';
   if (S.houses.length===1) return $('#f-err').textContent = 'Serve almeno una casa';
-  chiedi('Eliminare questa casa?', 'Elimina', () => { S.houses = S.houses.filter(h => h.id!==id); salva(); A.chiudi(); render(); }, true);
+  chiedi('Eliminare questa casa?', 'Elimina', () => { S.houses = S.houses.filter(h => h.id!==id); salvaImp(); A.chiudi(); render(); }, true);
 };
 
 /* ---------- Persone, categorie, dati ---------- */
 A.io = id => { S.settings.me = id; salva(); render(); };
-A.rinominaPersona = (id, v) => { v = v.trim(); if (!v){ render(); return; } persona(id).name = v; salva(); render(); toast('Nome salvato ✓'); };
-A.coloreP = id => { const p = persona(id); p.color = COLORI[(COLORI.indexOf(p.color)+1) % COLORI.length]; salva(); render(); };
+A.rinominaPersona = (id, v) => { v = v.trim(); if (!v){ render(); return; } persona(id).name = v; salvaImp(); render(); toast('Nome salvato ✓'); };
+A.coloreP = id => { const p = persona(id); p.color = COLORI[(COLORI.indexOf(p.color)+1) % COLORI.length]; salvaImp(); render(); };
 A.aggiungiPersona = () => {
   S.people.push({ id:uid('p'), name:'Nuova persona', color:COLORI[S.people.length % COLORI.length] });
-  salva(); render(); toast('Aggiunta: tocca il nome per cambiarlo');
+  salvaImp(); render(); toast('Aggiunta: tocca il nome per cambiarlo');
 };
 A.eliminaPersona = id => {
   const usata = S.expenses.some(e => e.payer===id || e.shares[id]) || S.transfers.some(t => t.from===id || t.to===id);
@@ -637,7 +665,7 @@ A.eliminaPersona = id => {
     S.people = S.people.filter(p => p.id!==id);
     S.houses.forEach(h => { h.members = h.members.filter(m => m!==id); if (!h.members.length) h.members = [S.people[0].id]; if (!h.members.includes(h.defaultPayer)) h.defaultPayer = h.members[0]; });
     if (S.settings.me===id) S.settings.me = S.people[0].id;
-    salva(); render();
+    salvaImp(); render();
   }, true);
 };
 A.aggiungiCategoria = () => {
@@ -645,12 +673,12 @@ A.aggiungiCategoria = () => {
   if (!nome) return toast('Scrivi il nome della categoria');
   const c = { id:uid('c'), name:nome, emoji };
   if ($('#nc-boll').checked) c.group = 'bollette';
-  S.categories.push(c); salva(); render(); toast('Categoria aggiunta ✓');
+  S.categories.push(c); salvaImp(); render(); toast('Categoria aggiunta ✓');
 };
 A.eliminaCategoria = id => {
   const n = S.expenses.filter(e => e.cat===id).length;
   if (n) return toast(`È usata in ${n} spes${n===1?'a':'e'}: non si può eliminare`);
-  chiedi('Eliminare questa categoria?', 'Elimina', () => { S.categories = S.categories.filter(c => c.id!==id); salva(); render(); }, true);
+  chiedi('Eliminare questa categoria?', 'Elimina', () => { S.categories = S.categories.filter(c => c.id!==id); salvaImp(); render(); }, true);
 };
 A.cancellaTutto = () => chiedi('Cancellare tutte le spese, i rimborsi e le impostazioni da questo telefono?', 'Cancella tutto', () => {
   S = statoIniziale(); salva(); ui.view = 'home'; render(); toast('Dati cancellati');
@@ -688,8 +716,143 @@ function datiEsempio(){
   return st;
 }
 
+/* ---------- Collegamento al foglio Google ---------- */
+async function api(action, dati={}){
+  let r, j;
+  try {
+    r = await fetch(CONFIG.API_URL, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+      body: JSON.stringify({ ...dati, action, session: SESS ? SESS.session : undefined }) });
+  } catch(e){ const er = new Error('RETE'); er.code = 'RETE'; throw er; }
+  try { j = await r.json(); } catch(e){ const er = new Error('RETE'); er.code = 'RETE'; throw er; }
+  if (!j.ok){ const er = new Error(j.error || 'ERRORE'); er.code = j.error || 'ERRORE'; throw er; }
+  return j;
+}
+
+// Ogni modifica parte subito; se manca la rete resta "in coda" e riparte da sola
+function invia(action, dati){
+  if (!ONLINE) return;
+  coda.push({ ...dati, action });
+  salvaCoda(); aggiornaStato(); svuotaCoda();
+}
+async function svuotaCoda(){
+  if (inviando || !SESS || !coda.length) return;
+  inviando = true; aggiornaStato();
+  let riprova = false;
+  try {
+    while (coda.length){
+      await api(coda[0].action, coda[0]);
+      coda.shift(); salvaCoda(); aggiornaStato();
+    }
+    statoSync = 'ok';
+  } catch(e){
+    if (e.code==='RETE') statoSync = 'offline';
+    else if (e.code==='NO_LOGIN' || e.code==='NON_AUTORIZZATO') sessioneScaduta();
+    else { coda.shift(); salvaCoda(); toast('⚠️ Modifica non salvata ('+e.code+')'); riprova = true; }
+  } finally {
+    inviando = false; aggiornaStato();
+    if (riprova) svuotaCoda();
+  }
+}
+async function sincronizza(){
+  if (!ONLINE || !SESS) return;
+  await svuotaCoda();
+  if (coda.length || !SESS) return;            // offline: si riprova più tardi
+  statoSync = 'sync'; aggiornaStato();
+  try {
+    const j = await api('load');
+    applicaServer(j);
+    statoSync = 'ok';
+  } catch(e){
+    if (e.code==='NO_LOGIN' || e.code==='NON_AUTORIZZATO') return sessioneScaduta();
+    statoSync = 'offline';
+  }
+  aggiornaStato();
+}
+function applicaServer(j){
+  Object.assign(SESS, { me:j.me, admin:j.admin, email:j.email, sheetUrl:j.sheetUrl }); salvaSess();
+  const st = j.state;
+  if (st.settings){ S.people = st.settings.people; S.houses = st.settings.houses; S.categories = st.settings.categories; }
+  else if (j.admin) invia('saveSettings', { settings:impostazioniAttuali() });   // primo avvio: il foglio prende le impostazioni dell'app
+  S.expenses = st.expenses; S.transfers = st.transfers; S.settings.me = j.me;
+  if (ui.view==='house' && !casa(ui.houseId)) ui.view = 'home';
+  salva(); render();
+}
+function testoStato(){
+  if (inviando || statoSync==='sync') return '⏳';
+  if (coda.length) return '⚠️ '+coda.length;
+  if (statoSync==='ok') return '☁️';
+  return '🔄';
+}
+function aggiornaStato(){
+  const b = $('#sync'); if (!b) return;
+  b.textContent = testoStato();
+  b.title = coda.length ? `${coda.length} modifiche in attesa di invio` : statoSync==='ok' ? 'Tutto salvato nel foglio' : 'Tocca per aggiornare';
+}
+A.sincronizza = () => { sincronizza(); if (coda.length && statoSync==='offline') toast('Nessuna connessione: riprovo appena torna'); };
+
+/* Accesso con Google */
+let gisPronto = null;
+function caricaGIS(){
+  if (gisPronto) return gisPronto;
+  gisPronto = new Promise((ok, ko) => {
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client'; s.async = true;
+    s.onload = ok; s.onerror = () => { gisPronto = null; ko(new Error('GIS')); };
+    document.head.appendChild(s);
+  });
+  return gisPronto;
+}
+function vLogin(){
+  return `<main class="login"><div class="login-box">
+    <img src="icon.svg" alt="" class="login-logo">
+    <h1>Gestione Casa</h1>
+    <p class="mut">Entra con il tuo account Google.<br>Possono entrare solo le persone autorizzate.</p>
+    <div id="gbtn"></div>
+    <p class="err" id="login-err"></p></div></main>`;
+}
+async function mostraBottoneGoogle(){
+  try {
+    await caricaGIS();
+    google.accounts.id.initialize({ client_id:CONFIG.CLIENT_ID, callback:alLogin, auto_select:false });
+    const box = $('#gbtn'); if (!box) return;
+    google.accounts.id.renderButton(box, { theme:'filled_blue', size:'large', shape:'pill', text:'signin_with', locale:'it' });
+  } catch(e){
+    const err = $('#login-err'); if (err) err.textContent = 'Non riesco a caricare l\'accesso Google. Controlla la connessione e riapri l\'app.';
+  }
+}
+async function alLogin(resp){
+  const err = $('#login-err'); if (err) err.textContent = 'Accesso in corso…';
+  try {
+    const j = await api('login', { idToken:resp.credential });
+    SESS = { session:j.session, email:j.email, me:j.me, admin:j.admin, sheetUrl:j.sheetUrl };
+    salvaSess(); S.settings.me = j.me; ui.view = 'home'; render(); sincronizza();
+  } catch(e){
+    const m = e.code==='NON_AUTORIZZATO' ? 'Questo account non è autorizzato. Chiedi a Federico di aggiungerti.'
+            : e.code==='RETE' ? 'Nessuna connessione, riprova.'
+            : 'Accesso non riuscito ('+(e.code||e.message)+').';
+    const el = $('#login-err'); if (el) el.textContent = m;
+  }
+}
+function sessioneScaduta(){
+  SESS = null; salvaSess(); statoSync = '';
+  if (sheetOpen) chiudiSheet();
+  render();
+  setTimeout(() => { const el = $('#login-err'); if (el) el.textContent = 'Accedi di nuovo per continuare.'; }, 50);
+}
+A.esci = () => chiedi(coda.length ? `Ci sono ${coda.length} modifiche non ancora inviate: uscendo si perdono. Uscire lo stesso?` : 'Uscire da Gestione Casa su questo telefono?', 'Esci', async () => {
+  const s = SESS && SESS.session;
+  SESS = null; salvaSess(); coda = []; salvaCoda();
+  S = statoIniziale(); salva(); ui.view = 'home';
+  if (sheetOpen) chiudiSheet();
+  render();
+  if (s) try { await fetch(CONFIG.API_URL, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body:JSON.stringify({ action:'logout', session:s }) }); } catch(e){}
+}, true);
+
 /* ---------- Avvio ---------- */
 carica();
 try { history.replaceState({ v:'home' }, ''); } catch(e){}
 render();
+if (ONLINE && SESS) sincronizza();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState==='visible') sincronizza(); });
+window.addEventListener('online', () => sincronizza());
 if ('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(() => {});
