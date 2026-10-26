@@ -5,7 +5,7 @@
    Nel prossimo passo: foglio Google + accesso con Google.
    ========================================================= */
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const LS_KEY = 'gestioneCasa.v1';
 const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MESI_B = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
@@ -153,7 +153,7 @@ function vai(view, extra){
 }
 
 function header(titolo, destra='', indietro=false){
-  return `<header class="top">${indietro ? `<button class="icon-btn" onclick="A.indietro()" aria-label="Indietro">‹</button>` : '<span class="logo">🏠</span>'}<h1>${esc(titolo)}</h1>${ONLINE ? `<button class="sync" id="sync" onclick="A.sincronizza()" aria-label="Sincronizza">${testoStato()}</button>` : ''}${destra}</header>`;
+  return `<header class="top">${indietro ? `<button class="icon-btn" onclick="A.indietro()" aria-label="Indietro">‹</button>` : '<a class="icon-btn" href="../Casa/" aria-label="Le mie app" title="Le mie app" style="display:grid;place-items:center"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2.5" fill="#34a373"/><rect x="13" y="3" width="8" height="8" rx="2.5" fill="#e0962f"/><rect x="3" y="13" width="8" height="8" rx="2.5" fill="#9b72ff"/><rect x="13" y="13" width="8" height="8" rx="2.5" fill="#8fa6ff"/></svg></a>'}<h1>${esc(titolo)}</h1>${ONLINE ? `<button class="sync" id="sync" onclick="A.sincronizza()" aria-label="Sincronizza">${testoStato()}</button>` : ''}${destra}</header>`;
 }
 function banner(){
   if (ONLINE) return '';
@@ -806,7 +806,7 @@ function vLogin(){
   return `<main class="login"><div class="login-box">
     <img src="icon.svg" alt="" class="login-logo">
     <h1>Gestione Casa</h1>
-    <p class="mut">Entra con il tuo account Google.<br>Possono entrare solo le persone autorizzate.</p>
+    <p class="mut">${chiaveHub() ? 'Entro con la chiave di sistema…<br>Oppure usa il tuo account Google.' : 'Entra con il tuo account Google.<br>Possono entrare solo le persone autorizzate.'}</p>
     <div id="gbtn"></div>
     <p class="err" id="login-err"></p></div></main>`;
 }
@@ -833,8 +833,38 @@ async function alLogin(resp){
     const el = $('#login-err'); if (el) el.textContent = m;
   }
 }
+/* Accesso con la chiave di sistema dell'hub "Le mie app" (stesso telefono = stessa memoria) */
+const ALIAS_CHI = { mamma:'Francesca', sorella:'Beatrice' };
+function chiaveHub(){ try { return localStorage.getItem('eco.chiave') || ''; } catch(e){ return ''; } }
+function chiHub(){
+  let n = ''; try { n = localStorage.getItem('eco.me') || ''; } catch(e){}
+  n = ALIAS_CHI[n.toLowerCase()] || n;
+  const p = S.people.find(x => x.name.toLowerCase() === n.toLowerCase());
+  return p ? p.id : n;
+}
+let provataChiave = false;
+async function entraConChiave(){
+  const chiave = chiaveHub();
+  if (!ONLINE || !chiave || provataChiave) return false;
+  provataChiave = true;
+  try {
+    const j = await api('loginChiave', { chiave, chi:chiHub() });
+    SESS = { session:j.session, email:j.email, me:j.me, admin:j.admin, sheetUrl:j.sheetUrl, via:'chiave' };
+    salvaSess(); S.settings.me = j.me; render(); sincronizza();
+    return true;
+  } catch(e){
+    const m = e.code==='CHIAVE_ERRATA' ? 'La chiave dell\'hub non coincide con quella di Gestione Casa.'
+            : e.code==='CHIAVE_NON_IMPOSTATA' || e.code==='AZIONE_SCONOSCIUTA' ? 'Gestione Casa non ha ancora la chiave di sistema: per ora entra con Google.'
+            : e.code==='TROPPI_TENTATIVI' ? 'Troppi tentativi: riprova tra 15 minuti.'
+            : e.code==='NON_AUTORIZZATO' ? 'Nell\'hub scegli chi sei (Federico, Mamma o Beatrice).'
+            : e.code==='RETE' ? 'Nessuna connessione, riprova.' : '';
+    setTimeout(() => { const el = $('#login-err'); if (el && m) el.textContent = m; }, 60);
+    return false;
+  }
+}
 function sessioneScaduta(){
   SESS = null; salvaSess(); statoSync = '';
+  provataChiave = false; entraConChiave();
   if (sheetOpen) chiudiSheet();
   render();
   setTimeout(() => { const el = $('#login-err'); if (el) el.textContent = 'Accedi di nuovo per continuare.'; }, 50);
@@ -853,6 +883,7 @@ carica();
 try { history.replaceState({ v:'home' }, ''); } catch(e){}
 render();
 if (ONLINE && SESS) sincronizza();
+else if (ONLINE) entraConChiave();
 document.addEventListener('visibilitychange', () => { if (document.visibilityState==='visible') sincronizza(); });
 window.addEventListener('online', () => sincronizza());
 if ('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(() => {});
