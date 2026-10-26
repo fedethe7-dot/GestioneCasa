@@ -5,7 +5,7 @@
    Nel prossimo passo: foglio Google + accesso con Google.
    ========================================================= */
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.2.1';
 const LS_KEY = 'gestioneCasa.v1';
 const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MESI_B = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
@@ -810,7 +810,14 @@ function vLogin(){
     <div id="gbtn"></div>
     <p class="err" id="login-err"></p></div></main>`;
 }
+const IN_APP = /LeMieApp/.test(navigator.userAgent);   // dentro l'app Android "Le mie app"
 async function mostraBottoneGoogle(){
+  if (IN_APP){   // Google non permette l'accesso dentro le app: si entra con la chiave di sistema
+    const box = $('#gbtn');
+    if (box) box.innerHTML = `<p class="mut">Nell'app si entra con la <b>chiave di sistema</b>.<br>Se non entra da sola: torna all'hub → ⚙️ → "Collega tutte le app".</p>
+      <a class="btn full" href="../Casa/" style="margin-top:12px">Vai all'hub</a>`;
+    return;
+  }
   try {
     await caricaGIS();
     google.accounts.id.initialize({ client_id:CONFIG.CLIENT_ID, callback:alLogin, auto_select:false });

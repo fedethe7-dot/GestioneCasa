@@ -1,5 +1,5 @@
 // Ad ogni aggiornamento dell'app aumenta questo numero
-const CACHE = 'gestione-casa-v3';
+const CACHE = 'gestione-casa-v4';
 const FILES = ['./', './index.html', './style.css', './app.js', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
