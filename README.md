@@ -15,7 +15,9 @@ Accesso con Google: possono entrare solo gli account autorizzati nello script de
 
 ## Chiave di sistema (hub "Le mie app")
 
-L'app entra da sola con la chiave salvata nell'hub; l'accesso con Google resta disponibile.
+L'app entra da sola con la chiave salvata nell'hub. Se non ci riesce mostra il motivo e un campo
+per scrivere la chiave (e scegliere chi sei) direttamente in Gestione Casa.
+Nell'app Android "Le mie app" si entra solo con la chiave; nel browser resta anche l'accesso con Google.
 Lato script: aggiungere `apps-script/Chiave.gs` come nuovo file, una riga in `gestisci()`
 (`if (req.action === 'loginChiave') return loginChiave(req);`), eseguire `impostaChiave`
 e pubblicare una nuova versione.

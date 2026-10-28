@@ -5,7 +5,7 @@
    Nel prossimo passo: foglio Google + accesso con Google.
    ========================================================= */
 
-const APP_VERSION = '1.2.1';
+const APP_VERSION = '1.3.0';
 const LS_KEY = 'gestioneCasa.v1';
 const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MESI_B = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
@@ -803,21 +803,23 @@ function caricaGIS(){
   return gisPronto;
 }
 function vLogin(){
+  const conChiave = IN_APP || chiaveHub();
+  const chi = chiHubNome();
   return `<main class="login"><div class="login-box">
     <img src="icon.svg" alt="" class="login-logo">
     <h1>Gestione Casa</h1>
-    <p class="mut">${chiaveHub() ? 'Entro con la chiave di sistema…<br>Oppure usa il tuo account Google.' : 'Entra con il tuo account Google.<br>Possono entrare solo le persone autorizzate.'}</p>
-    <div id="gbtn"></div>
+    <p class="mut" id="login-msg">${conChiave ? (chiaveHub() ? 'Entro con la chiave di sistema…' : 'Entra con la <b>chiave di sistema</b> (la stessa delle altre app).') : 'Entra con il tuo account Google.<br>Possono entrare solo le persone autorizzate.'}</p>
+    ${conChiave ? `<div id="chiave-box" style="${chiaveHub() ? 'display:none' : ''}">
+      <div class="chips wrapc" style="justify-content:center;margin:14px 0 4px">${[['Federico','Federico'],['Mamma','Mamma'],['Sorella','Beatrice']].map(([n,t]) => `<button class="chip${chi===n ? ' on' : ''}" data-n="${n}" onclick="A.sceltaChi('${n}')">${t}</button>`).join('')}</div>
+      <input id="chiave-in" type="password" maxlength="40" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" placeholder="Chiave di sistema" style="margin-top:10px">
+      <button class="btn full" onclick="A.entraChiave()">🔑 Entra</button>
+    </div>` : ''}
+    <div id="gbtn" style="margin-top:14px"></div>
     <p class="err" id="login-err"></p></div></main>`;
 }
 const IN_APP = /LeMieApp/.test(navigator.userAgent);   // dentro l'app Android "Le mie app"
 async function mostraBottoneGoogle(){
-  if (IN_APP){   // Google non permette l'accesso dentro le app: si entra con la chiave di sistema
-    const box = $('#gbtn');
-    if (box) box.innerHTML = `<p class="mut">Nell'app si entra con la <b>chiave di sistema</b>.<br>Se non entra da sola: torna all'hub → ⚙️ → "Collega tutte le app".</p>
-      <a class="btn full" href="../Casa/" style="margin-top:12px">Vai all'hub</a>`;
-    return;
-  }
+  if (IN_APP) return;   // Google non permette l'accesso dentro le app: si entra con la chiave di sistema
   try {
     await caricaGIS();
     google.accounts.id.initialize({ client_id:CONFIG.CLIENT_ID, callback:alLogin, auto_select:false });
@@ -841,40 +843,57 @@ async function alLogin(resp){
   }
 }
 /* Accesso con la chiave di sistema dell'hub "Le mie app" (stesso telefono = stessa memoria) */
-const ALIAS_CHI = { mamma:'Francesca', sorella:'Beatrice' };
+const ALIAS_CHI = { mamma:'Francesca', sorella:'Beatrice', bea:'Beatrice' };
 function chiaveHub(){ try { return localStorage.getItem('eco.chiave') || ''; } catch(e){ return ''; } }
+function chiHubNome(){ try { return localStorage.getItem('eco.me') || ''; } catch(e){ return ''; } }
 function chiHub(){
-  let n = ''; try { n = localStorage.getItem('eco.me') || ''; } catch(e){}
-  n = ALIAS_CHI[n.toLowerCase()] || n;
+  const n = ALIAS_CHI[chiHubNome().toLowerCase()] || chiHubNome();
   const p = S.people.find(x => x.name.toLowerCase() === n.toLowerCase());
   return p ? p.id : n;
 }
-let provataChiave = false;
-async function entraConChiave(){
-  const chiave = chiaveHub();
-  if (!ONLINE || !chiave || provataChiave) return false;
-  provataChiave = true;
+const conTimeout = (p, ms=20000) => Promise.race([p, new Promise((_, ko) => setTimeout(() => { const e = new Error('RETE'); e.code = 'RETE'; ko(e); }, ms))]);
+let entrando = false;
+async function entraConChiave(chiave = chiaveHub()){
+  if (!ONLINE || !chiave || entrando) return false;
+  entrando = true;
+  const el = $('#login-err'); if (el) el.textContent = 'Accesso in corso…';
   try {
-    const j = await api('loginChiave', { chiave, chi:chiHub() });
+    const j = await conTimeout(api('loginChiave', { chiave, chi:chiHub() }));
+    try { localStorage.setItem('eco.chiave', chiave); } catch(e){}   // vale anche per l'hub e le altre app
     SESS = { session:j.session, email:j.email, me:j.me, admin:j.admin, sheetUrl:j.sheetUrl, via:'chiave' };
-    salvaSess(); S.settings.me = j.me; render(); sincronizza();
+    salvaSess(); S.settings.me = j.me; ui.view = 'home'; render(); sincronizza();
     return true;
   } catch(e){
-    const m = e.code==='CHIAVE_ERRATA' ? 'La chiave dell\'hub non coincide con quella di Gestione Casa.'
-            : e.code==='CHIAVE_NON_IMPOSTATA' || e.code==='AZIONE_SCONOSCIUTA' ? 'Gestione Casa non ha ancora la chiave di sistema: per ora entra con Google.'
+    const m = e.code==='CHIAVE_ERRATA' ? 'Chiave sbagliata: non coincide con quella di Gestione Casa. Riscrivila qui sotto.'
+            : e.code==='CHIAVE_NON_IMPOSTATA' ? 'Nello script di Gestione Casa manca la chiave: va eseguita una volta la funzione impostaChiave.'
+            : e.code==='AZIONE_SCONOSCIUTA' ? 'Lo script di Gestione Casa non conosce ancora la chiave: manca il file Chiave.gs o la nuova versione pubblicata.'
             : e.code==='TROPPI_TENTATIVI' ? 'Troppi tentativi: riprova tra 15 minuti.'
-            : e.code==='NON_AUTORIZZATO' ? 'Nell\'hub scegli chi sei (Federico, Mamma o Beatrice).'
-            : e.code==='RETE' ? 'Nessuna connessione, riprova.' : '';
-    setTimeout(() => { const el = $('#login-err'); if (el && m) el.textContent = m; }, 60);
+            : e.code==='NON_AUTORIZZATO' ? 'Scegli chi sei qui sopra e riprova.'
+            : e.code==='RETE' ? 'Nessuna risposta dal foglio: controlla la connessione e riprova.'
+            : 'Accesso non riuscito ('+(e.code||e.message)+').';
+    const box = $('#chiave-box'); if (box) box.style.display = '';
+    const msg = $('#login-msg'); if (msg) msg.innerHTML = 'Entra con la <b>chiave di sistema</b> (la stessa delle altre app).';
+    const err = $('#login-err'); if (err) err.textContent = m;
     return false;
-  }
+  } finally { entrando = false; }
 }
+A.sceltaChi = n => {
+  try { localStorage.setItem('eco.me', n); } catch(e){}   // "chi sei" vale per tutte le app
+  document.querySelectorAll('#chiave-box .chip').forEach(b => b.classList.toggle('on', b.dataset.n===n));
+};
+A.entraChiave = () => {
+  const k = ($('#chiave-in') || {}).value || '';
+  const err = $('#login-err');
+  if (!chiHubNome()){ if (err) err.textContent = 'Prima tocca chi sei.'; return; }
+  if (k.trim().length < 8){ if (err) err.textContent = 'La chiave ha almeno 8 caratteri.'; return; }
+  entraConChiave(k.trim());
+};
 function sessioneScaduta(){
   SESS = null; salvaSess(); statoSync = '';
-  provataChiave = false; entraConChiave();
   if (sheetOpen) chiudiSheet();
   render();
-  setTimeout(() => { const el = $('#login-err'); if (el) el.textContent = 'Accedi di nuovo per continuare.'; }, 50);
+  if (chiaveHub()) entraConChiave();
+  else setTimeout(() => { const el = $('#login-err'); if (el) el.textContent = 'Accedi di nuovo per continuare.'; }, 50);
 }
 A.esci = () => chiedi(coda.length ? `Ci sono ${coda.length} modifiche non ancora inviate: uscendo si perdono. Uscire lo stesso?` : 'Uscire da Gestione Casa su questo telefono?', 'Esci', async () => {
   const s = SESS && SESS.session;
