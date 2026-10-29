@@ -5,7 +5,7 @@
    Nel prossimo passo: foglio Google + accesso con Google.
    ========================================================= */
 
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 const LS_KEY = 'gestioneCasa.v1';
 const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MESI_B = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
@@ -32,8 +32,11 @@ const CATEGORIE_BASE = [
   { id:'idraulico',    name:'Idraulico',          emoji:'🚿' },
   { id:'giardinaggio', name:'Giardinaggio',       emoji:'🌿' },
   { id:'animali',      name:'Animali',            emoji:'🐾' },   // arrivano anche da sole dall'app Animali (dal 2027)
+  { id:'baracca',      name:'Baracca',            emoji:'🧰' },   // arrivano anche da sole dall'app Baracca (dal 2027)
   { id:'altro',        name:'Altro',              emoji:'📦' },
 ];
+
+const CATEGORIE_APP = ['animali', 'baracca'];   // categorie usate dalle app Animali e Baracca
 
 function statoIniziale(){
   return {
@@ -774,9 +777,10 @@ function applicaServer(j){
   const st = j.state;
   if (st.settings){
     S.people = st.settings.people; S.houses = st.settings.houses; S.categories = st.settings.categories;
-    // categoria Animali: se manca nel foglio la aggiunge l'amministratore, da solo
-    if (j.admin && !S.categories.some(c => c.id==='animali')){
-      S.categories.push({ id:'animali', name:'Animali', emoji:'🐾', base:true });
+    // categorie che arrivano dalle altre app: se mancano nel foglio le aggiunge l'amministratore, da solo
+    const mancanti = j.admin ? CATEGORIE_APP.filter(id => !S.categories.some(c => c.id===id)) : [];
+    if (mancanti.length){
+      mancanti.forEach(id => S.categories.push({ ...CATEGORIE_BASE.find(c => c.id===id), base:true }));
       invia('saveSettings', { settings:impostazioniAttuali() });
     }
   }
