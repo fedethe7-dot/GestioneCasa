@@ -5,7 +5,7 @@
    Nel prossimo passo: foglio Google + accesso con Google.
    ========================================================= */
 
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 const LS_KEY = 'gestioneCasa.v1';
 const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MESI_B = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
@@ -31,6 +31,7 @@ const CATEGORIE_BASE = [
   { id:'elettricista', name:'Elettricista',       emoji:'🔌' },
   { id:'idraulico',    name:'Idraulico',          emoji:'🚿' },
   { id:'giardinaggio', name:'Giardinaggio',       emoji:'🌿' },
+  { id:'animali',      name:'Animali',            emoji:'🐾' },   // arrivano anche da sole dall'app Animali (dal 2027)
   { id:'altro',        name:'Altro',              emoji:'📦' },
 ];
 
@@ -771,7 +772,14 @@ async function sincronizza(){
 function applicaServer(j){
   Object.assign(SESS, { me:j.me, admin:j.admin, email:j.email, sheetUrl:j.sheetUrl }); salvaSess();
   const st = j.state;
-  if (st.settings){ S.people = st.settings.people; S.houses = st.settings.houses; S.categories = st.settings.categories; }
+  if (st.settings){
+    S.people = st.settings.people; S.houses = st.settings.houses; S.categories = st.settings.categories;
+    // categoria Animali: se manca nel foglio la aggiunge l'amministratore, da solo
+    if (j.admin && !S.categories.some(c => c.id==='animali')){
+      S.categories.push({ id:'animali', name:'Animali', emoji:'🐾', base:true });
+      invia('saveSettings', { settings:impostazioniAttuali() });
+    }
+  }
   else if (j.admin) invia('saveSettings', { settings:impostazioniAttuali() });   // primo avvio: il foglio prende le impostazioni dell'app
   S.expenses = st.expenses; S.transfers = st.transfers; S.settings.me = j.me;
   if (ui.view==='house' && !casa(ui.houseId)) ui.view = 'home';
