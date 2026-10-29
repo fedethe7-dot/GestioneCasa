@@ -5,7 +5,7 @@
    Nel prossimo passo: foglio Google + accesso con Google.
    ========================================================= */
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 const LS_KEY = 'gestioneCasa.v1';
 const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MESI_B = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
@@ -33,10 +33,11 @@ const CATEGORIE_BASE = [
   { id:'giardinaggio', name:'Giardinaggio',       emoji:'🌿' },
   { id:'animali',      name:'Animali',            emoji:'🐾' },   // arrivano anche da sole dall'app Animali (dal 2027)
   { id:'baracca',      name:'Baracca',            emoji:'🧰' },   // arrivano anche da sole dall'app Baracca (dal 2027)
+  { id:'progetti',     name:'Progetti casa',      emoji:'💡' },   // arrivano anche da sole dai Progetti di Lavori (dal 2027)
   { id:'altro',        name:'Altro',              emoji:'📦' },
 ];
 
-const CATEGORIE_APP = ['animali', 'baracca'];   // categorie usate dalle app Animali e Baracca
+const CATEGORIE_APP = ['animali', 'baracca', 'progetti'];   // categorie usate dalle app Animali, Baracca e Lavori
 
 function statoIniziale(){
   return {
