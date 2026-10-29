@@ -5,7 +5,7 @@
    Nel prossimo passo: foglio Google + accesso con Google.
    ========================================================= */
 
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 const LS_KEY = 'gestioneCasa.v1';
 const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MESI_B = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
@@ -36,6 +36,21 @@ const CATEGORIE_BASE = [
   { id:'progetti',     name:'Progetti casa',      emoji:'💡' },   // arrivano anche da sole dai Progetti di Lavori (dal 2027)
   { id:'altro',        name:'Altro',              emoji:'📦' },
 ];
+
+/* Disegni pronti per le nuove categorie: si tocca, si sistema il nome se serve, e si aggiunge */
+const ICONE = [
+  ['💊','Farmacia'], ['🩺','Medico'], ['🦷','Dentista'], ['👓','Ottico'], ['🧴','Igiene e cura'], ['🧻','Carta e casa'],
+  ['🧽','Pulizie'], ['🧺','Lavanderia'], ['🧹','Impresa pulizie'], ['🪣','Detersivi'], ['🛋️','Arredamento'], ['🪑','Mobili'],
+  ['🧯','Sicurezza'], ['🔒','Serrature'], ['🔩','Ferramenta'], ['🎨','Imbianchino'], ['🪵','Legna e pellet'], ['❄️','Climatizzatore'],
+  ['💡','Lampadine'], ['📺','Elettrodomestici'], ['💻','Elettronica'], ['📱','Telefono'], ['📡','Abbonamenti TV'], ['🎵','Musica e streaming'],
+  ['🏢','Condominio'], ['🏦','Mutuo e banca'], ['🧾','Tasse'], ['📮','Posta'], ['🛡️','Assicurazione casa'], ['🔑','Affitto'],
+  ['🚗','Auto'], ['⛽','Carburante'], ['🅿️','Parcheggio'], ['🚌','Trasporti'], ['🚆','Treno'], ['✈️','Viaggi'],
+  ['🍽️','Ristorante'], ['🍕','Pizza e asporto'], ['☕','Bar'], ['🥖','Panetteria'], ['🥩','Macelleria'], ['🍎','Frutta e verdura'],
+  ['🐾','Animali'], ['🦴','Cibo per cani'], ['🎁','Regali'], ['🎉','Feste'], ['💐','Fiori'], ['🕯️','Ricorrenze'],
+  ['👕','Abbigliamento'], ['👟','Scarpe'], ['💇','Parrucchiere'], ['🏋️','Palestra'], ['⚽','Sport'], ['📚','Libri e scuola'],
+  ['✏️','Cancelleria'], ['🧸','Giochi'], ['👵','Nonni'], ['⛪','Offerte'], ['💝','Donazioni'], ['🧳','Vacanze']
+];
+const ICONE_CASA = ['🏠','🏡','🏘️','🏢','🏚️','👵','👴','🏖️','⛰️','🌳'];
 
 const CATEGORIE_APP = ['animali', 'baracca', 'progetti'];   // categorie usate dalle app Animali, Baracca e Lavori
 
@@ -381,7 +396,10 @@ function vImpostazioni(){
     <button class="btn ghost full" onclick="A.modificaCasa()">➕ Nuova casa</button>
     <h2>Categorie</h2><div class="list">${cats}</div>
     <div class="card addcat"><div class="lbl">Nuova categoria</div>
-      <div class="two small-first"><input id="nc-emoji" placeholder="🏷️" maxlength="8"><input id="nc-name" placeholder="Nome (es. Pulizie)"></div>
+      <div class="two small-first"><input id="nc-emoji" placeholder="🏷️" maxlength="8"><input id="nc-name" placeholder="Nome (es. Farmacia)"></div>
+      <details class="icone"><summary>🎨 Scegli un disegno</summary>
+        <div class="icone-grid">${ICONE.map(([e, n]) => `<button type="button" onclick="A.icona('${e}','${n.replace(/'/g, "\\'")}')" title="${esc(n)}"><span>${e}</span><small>${esc(n)}</small></button>`).join('')}</div>
+      </details>
       <label class="checkline"><input type="checkbox" id="nc-boll"> È una bolletta</label>
       <button class="btn full" onclick="A.aggiungiCategoria()">Aggiungi categoria</button></div>
     ${ONLINE ? '' : `<h2>Dati</h2>
@@ -614,8 +632,9 @@ A.modificaCasa = id => {
 };
 function sheetCasa(){
   return `<div class="sheet-h"><h2>${ed.id?'Modifica casa':'Nuova casa'}</h2><button class="icon-btn" onclick="A.chiudi()" aria-label="Chiudi">✕</button></div>
+    <div class="chips wrapc" style="margin-bottom:8px">${ICONE_CASA.map(e => `<button class="chip big ${ed.emoji===e?'on':''}" onclick="A.edHIcona('${e}')">${e}</button>`).join('')}</div>
     <div class="two small-first"><label><div class="lbl">Emoji</div><input value="${esc(ed.emoji)}" maxlength="8" oninput="A.edH('emoji',this.value)"></label>
-      <label><div class="lbl">Nome</div><input value="${esc(ed.name)}" placeholder="Es. Casa al mare" oninput="A.edH('name',this.value)"></label></div>
+      <label><div class="lbl">Nome</div><input value="${esc(ed.name)}" placeholder="Es. Casa dei nonni" oninput="A.edH('name',this.value)"></label></div>
     <div class="lbl">Chi ne fa parte</div>
     <div class="chips wrapc">${S.people.map(p => `<button class="chip big ${ed.members.includes(p.id)?'on':''}" onclick="A.edHMem('${p.id}')">${avatar(p.id)} ${esc(p.name)}</button>`).join('')}</div>
     <div class="lbl">Di solito paga</div>
@@ -625,6 +644,7 @@ function sheetCasa(){
     ${ed.id ? `<button class="btn ghost danger full" onclick="A.eliminaCasa()">🗑️ Elimina casa</button>` : ''}`;
 }
 A.edH = (k, v) => { ed[k] = v; };
+A.edHIcona = e => { ed.emoji = e; aggiornaSheet(sheetCasa()); };
 A.edHMem = id => {
   ed.members = ed.members.includes(id) ? ed.members.filter(x => x!==id) : S.people.map(p => p.id).filter(x => x===id || ed.members.includes(x));
   if (!ed.members.includes(ed.defaultPayer)) ed.defaultPayer = ed.members[0] || null;
@@ -672,6 +692,12 @@ A.eliminaPersona = id => {
     if (S.settings.me===id) S.settings.me = S.people[0].id;
     salvaImp(); render();
   }, true);
+};
+A.icona = (e, n) => {
+  $('#nc-emoji').value = e;
+  const nm = $('#nc-name');
+  if (!nm.value.trim() || ICONE.some(([, x]) => x === nm.value.trim())) nm.value = n;   // il nome si può cambiare dopo
+  document.querySelectorAll('.icone-grid button').forEach(b => b.classList.toggle('on', b.querySelector('span').textContent === e));
 };
 A.aggiungiCategoria = () => {
   const nome = $('#nc-name').value.trim(); const emoji = $('#nc-emoji').value.trim() || '🏷️';

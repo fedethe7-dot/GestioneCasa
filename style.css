@@ -191,3 +191,12 @@ a.btn{text-decoration:none}
 .login-logo{width:96px;height:96px;border-radius:26px;margin-bottom:10px;box-shadow:var(--shadow)}
 .login-box h1{margin:4px 0 8px;font-size:28px}
 #gbtn{display:flex;justify-content:center;margin:26px 0 8px;min-height:44px}
+
+/* Disegni per le categorie */
+.icone { margin: 10px 0 4px; }
+.icone summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
+.icone-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; margin-top: 6px; max-height: 300px; overflow-y: auto; }
+.icone-grid button { display: flex; flex-direction: column; align-items: center; gap: 2px; border: 1.5px solid transparent; background: rgba(127,127,127,.08); border-radius: 12px; padding: 8px 2px; cursor: pointer; color: inherit; font: inherit; }
+.icone-grid button span { font-size: 26px; line-height: 1.1; }
+.icone-grid button small { font-size: 11px; opacity: .8; text-align: center; line-height: 1.15; }
+.icone-grid button.on { border-color: currentColor; }
