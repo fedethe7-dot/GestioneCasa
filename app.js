@@ -5,7 +5,7 @@
    Nel prossimo passo: foglio Google + accesso con Google.
    ========================================================= */
 
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.8.0';
 const LS_KEY = 'gestioneCasa.v1';
 const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MESI_B = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
@@ -31,9 +31,14 @@ const CATEGORIE_BASE = [
   { id:'elettricista', name:'Elettricista',       emoji:'🔌' },
   { id:'idraulico',    name:'Idraulico',          emoji:'🚿' },
   { id:'giardinaggio', name:'Giardinaggio',       emoji:'🌿' },
+  { id:'farmacia',     name:'Farmacia',           emoji:'💊' },
+  { id:'medico',       name:'Medico e visite',    emoji:'🩺' },
+  { id:'pulizie',      name:'Pulizie e detersivi',emoji:'🧽' },
+  { id:'arredamento',  name:'Casa e arredamento', emoji:'🛋️' },
+  { id:'abbigliamento',name:'Abbigliamento',      emoji:'👕' },
   { id:'animali',      name:'Animali',            emoji:'🐾' },   // arrivano anche da sole dall'app Animali (dal 2027)
   { id:'baracca',      name:'Baracca',            emoji:'🧰' },   // arrivano anche da sole dall'app Baracca (dal 2027)
-  { id:'progetti',     name:'Progetti casa',      emoji:'💡' },   // arrivano anche da sole dai Progetti di Lavori (dal 2027)
+  { id:'progetti',     name:'Progetti casa',      emoji:'🔨' },   // arrivano anche da sole dai Progetti di Lavori (dal 2027)
   { id:'altro',        name:'Altro',              emoji:'📦' },
 ];
 
@@ -52,7 +57,7 @@ const ICONE = [
 ];
 const ICONE_CASA = ['🏠','🏡','🏘️','🏢','🏚️','👵','👴','🏖️','⛰️','🌳'];
 
-const CATEGORIE_APP = ['animali', 'baracca', 'progetti'];   // categorie usate dalle app Animali, Baracca e Lavori
+const CATEGORIE_APP = ['farmacia', 'medico', 'pulizie', 'arredamento', 'abbigliamento', 'animali', 'baracca', 'progetti'];   // categorie usate dalle app Animali, Baracca e Lavori
 
 function statoIniziale(){
   return {
@@ -120,6 +125,9 @@ const persona = id => S.people.find(p => p.id===id) || { id, name:'?', color:'#8
 const casa = id => S.houses.find(h => h.id===id);
 const cat = id => S.categories.find(c => c.id===id) || { name:'Spesa', emoji:'💸' };
 const isBolletta = e => cat(e.cat).group === 'bollette';
+/* Voci meno usate: nella nuova spesa stanno dentro "Altro", come le bollette dentro "Bollette" */
+const SOTTO_ALTRO = ['altro', 'medico', 'pulizie', 'arredamento', 'abbigliamento'];
+const gruppo = c => (c && c.group) || (c && SOTTO_ALTRO.includes(c.id) ? 'altro' : null);
 function avatar(id){ const p = persona(id); return `<span class="av" style="background:${esc(p.color)}">${esc((p.name||'?')[0].toUpperCase())}</span>`; }
 
 function dividiUguale(tot, ids){
@@ -384,7 +392,7 @@ function vImpostazioni(){
   const case_ = S.houses.map(h => `<button class="row" onclick="A.modificaCasa('${h.id}')"><span class="ico">${esc(h.emoji)}</span>
       <span class="mid"><b>${esc(h.name)}</b><small>${esc(h.members.map(id=>persona(id).name).join(', '))} · di solito paga ${esc(persona(h.defaultPayer).name)}</small></span><span class="chev">›</span></button>`).join('');
   const cats = S.categories.map(c => `<div class="row"><span class="ico">${esc(c.emoji)}</span>
-      <span class="mid"><b>${esc(c.name)}</b><small>${c.group?'Bolletta':'Categoria'}${c.base?'':' · aggiunta da te'}</small></span>
+      <span class="mid"><b>${esc(c.name)}</b><small>${c.group==='bollette'?'Bolletta':gruppo(c)==='altro'?'Dentro «Altro»':'Categoria'}${c.base?'':' · aggiunta da te'}</small></span>
       ${c.base ? '' : `<button class="icon-btn sm" onclick="A.eliminaCategoria('${c.id}')" aria-label="Elimina">🗑️</button>`}</div>`).join('');
   return header('Impostazioni', '', true) + `<main class="wrap">
     ${ONLINE ? account : `<h2>Chi sono io</h2>
@@ -466,9 +474,11 @@ A.nuovaSpesa = pre => {
          mode:'solo', sel:{}, custom:{} };
   h.members.forEach(id => ed.sel[id] = true);
   if (pre==='bollette') ed.group = 'bollette';
-  else if (pre){ ed.cat = pre; ed.group = cat(pre).group || null; }
-  apriSheet(sheetSpesa(), () => setTimeout(() => { const i = $('#f-amount'); if (i) i.focus(); }, 280));
+  else if (pre){ ed.cat = pre; ed.group = gruppo(cat(pre)); }
+  // la tastiera si apre solo se la categoria è già scelta (es. pulsante "Spesa"); altrimenti prima si sceglie la categoria
+  apriSheet(sheetSpesa(), () => { if (ed.cat) setTimeout(focusImporto, 280); });
 };
+function focusImporto(){ const i = $('#f-amount'); if (i && !i.value) i.focus(); }
 A.modificaSpesa = id => {
   const e = S.expenses.find(x => x.id===id); if (!e) return;
   const h = casa(e.houseId);
@@ -476,7 +486,7 @@ A.modificaSpesa = id => {
   let mode = 'scegli';
   if (ids.length===1 && ids[0]===e.payer) mode = 'solo';
   else if (ids.length===h.members.length && JSON.stringify(dividiUguale(e.amount, h.members)) === JSON.stringify(Object.fromEntries(h.members.map(m => [m, e.shares[m]||0])))) mode = 'uguale';
-  ed = { tipo:'e', id:e.id, houseId:e.houseId, amount:centsToInput(e.amount), cat:e.cat, group:cat(e.cat).group||null, desc:e.desc||'', date:e.date,
+  ed = { tipo:'e', id:e.id, houseId:e.houseId, amount:centsToInput(e.amount), cat:e.cat, group:gruppo(cat(e.cat)), desc:e.desc||'', date:e.date,
          payer:e.payer, mode, sel:{}, custom:{} };
   h.members.forEach(m => { ed.sel[m] = mode!=='scegli' || !!e.shares[m]; if (mode==='scegli' && e.shares[m]) ed.custom[m] = centsToInput(e.shares[m]); });
   apriSheet(sheetSpesa());
@@ -485,14 +495,19 @@ A.modificaSpesa = id => {
 function sheetSpesa(){
   const h = casa(ed.houseId);
   const tile = (on, click, emoji, nome) => `<button class="tile ${on?'on':''}" onclick="${click}"><span>${esc(emoji)}</span>${esc(nome)}</button>`;
-  const tiles = S.categories.filter(c => !c.group).map(c => tile(ed.cat===c.id, `A.edCat('${c.id}')`, c.emoji, c.name));
+  const tiles = S.categories.filter(c => !gruppo(c)).map(c => tile(ed.cat===c.id, `A.edCat('${c.id}')`, c.emoji, c.name));
   tiles.splice(1, 0, tile(ed.group==='bollette', `A.edGruppo('bollette')`, '💡', 'Bollette'));
-  const subs = ed.group==='bollette'
-    ? `<div class="subtiles">${S.categories.filter(c => c.group==='bollette').map(c => `<button class="chip ${ed.cat===c.id?'on':''}" onclick="A.edCat('${c.id}')">${esc(c.emoji)} ${esc(c.name)}</button>`).join('')}</div>` : '';
+  // Farmacia subito dopo le bollette, tra le principali
+  const iF = S.categories.filter(c => !gruppo(c)).findIndex(c => c.id==='farmacia');
+  if (iF > 1){ const [f] = tiles.splice(iF + 1, 1); tiles.splice(2, 0, f); }
+  if (S.categories.some(c => gruppo(c)==='altro')) tiles.push(tile(ed.group==='altro', `A.edGruppo('altro')`, '📦', 'Altro'));
+  const subs = ed.group
+    ? `<div class="subtiles">${S.categories.filter(c => gruppo(c)===ed.group).map(c => `<button class="chip ${ed.cat===c.id?'on':''}" onclick="A.edCat('${c.id}')">${esc(c.emoji)} ${esc(c.name)}</button>`).join('')}</div>` : '';
   const modi = [['solo','Solo '+persona(ed.payer).name], ['uguale','Tutti uguale'], ['scegli','Scegli']];
   return `<div class="sheet-h"><h2>${ed.id?'Modifica spesa':'Nuova spesa'}</h2><button class="icon-btn" onclick="A.chiudi()" aria-label="Chiudi">✕</button></div>
-    <label class="amount"><span>€</span><input id="f-amount" inputmode="decimal" placeholder="0,00" autocomplete="off" value="${esc(ed.amount)}" oninput="A.edAmount(this.value)"></label>
     <div class="lbl">Categoria</div><div class="tiles">${tiles.join('')}</div>${subs}
+    <div class="lbl">Importo</div>
+    <label class="amount"><span>€</span><input id="f-amount" inputmode="decimal" enterkeyhint="done" placeholder="0,00" autocomplete="off" value="${esc(ed.amount)}" oninput="A.edAmount(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"></label>
     <div class="two"><label><div class="lbl">Descrizione</div><input placeholder="Facoltativa" value="${esc(ed.desc)}" oninput="A.edDesc(this.value)"></label>
       <label><div class="lbl">Data</div><input type="date" value="${esc(ed.date)}" onchange="A.edDate(this.value)"></label></div>
     <div class="lbl">Pagato da</div>
@@ -550,8 +565,8 @@ function aggiornaSplitLive(){
 A.edAmount = v => { ed.amount = v; if (ed.mode==='uguale') $('#splitBox').innerHTML = splitBox(); else if (ed.mode==='scegli') aggiornaSplitLive(); };
 A.edDesc = v => { ed.desc = v; };
 A.edDate = v => { ed.date = v; };
-A.edCat = id => { ed.cat = id; ed.group = cat(id).group || null; aggiornaSheet(sheetSpesa()); };
-A.edGruppo = g => { ed.group = g; if (cat(ed.cat).group!==g) ed.cat = null; aggiornaSheet(sheetSpesa()); };
+A.edCat = id => { ed.cat = id; ed.group = gruppo(cat(id)); aggiornaSheet(sheetSpesa()); if (!ed.id) setTimeout(focusImporto, 60); };
+A.edGruppo = g => { ed.group = g; if (gruppo(cat(ed.cat))!==g) ed.cat = null; aggiornaSheet(sheetSpesa()); };
 A.edPayer = id => { ed.payer = id; aggiornaSheet(sheetSpesa()); };
 A.edMode = m => { ed.mode = m; aggiornaSheet(sheetSpesa()); };
 A.edSel = id => { ed.sel[id] = !ed.sel[id]; if (!ed.sel[id]) delete ed.custom[id]; $('#splitBox').innerHTML = splitBox(); };
@@ -561,7 +576,7 @@ A.salvaSpesa = () => {
   const err = m => { $('#f-err').textContent = m; };
   const tot = parseEuro(ed.amount);
   if (!(tot>0)) return err('Scrivi l\'importo');
-  if (!ed.cat) return err(ed.group==='bollette' ? 'Scegli il tipo di bolletta' : 'Scegli una categoria');
+  if (!ed.cat) return err(ed.group==='bollette' ? 'Scegli il tipo di bolletta' : ed.group==='altro' ? 'Scegli una voce di Altro' : 'Scegli una categoria');
   const q = calcolaQuote();
   if (!q.ok) return err(q.msg || 'Controlla la divisione');
   const shares = {}; for (const k in q.shares) if (q.shares[k]>0) shares[k] = q.shares[k];
@@ -806,8 +821,16 @@ function applicaServer(j){
     S.people = st.settings.people; S.houses = st.settings.houses; S.categories = st.settings.categories;
     // categorie che arrivano dalle altre app: se mancano nel foglio le aggiunge l'amministratore, da solo
     const mancanti = j.admin ? CATEGORIE_APP.filter(id => !S.categories.some(c => c.id===id)) : [];
+    // "Progetti casa" aveva la stessa lampadina delle Bollette: ora ha il martello
+    const pr = j.admin && S.categories.find(c => c.id==='progetti' && c.emoji==='💡');
+    if (pr && !mancanti.length){ pr.emoji = '🔨'; invia('saveSettings', { settings:impostazioniAttuali() }); }
+    if (pr) pr.emoji = '🔨';
     if (mancanti.length){
-      mancanti.forEach(id => S.categories.push({ ...CATEGORIE_BASE.find(c => c.id===id), base:true }));
+      mancanti.forEach(id => {   // le nuove vanno prima di "Altro", che resta l'ultima
+        const c = { ...CATEGORIE_BASE.find(x => x.id===id), base:true };
+        const iAltro = S.categories.findIndex(x => x.id==='altro');
+        iAltro >= 0 ? S.categories.splice(iAltro, 0, c) : S.categories.push(c);
+      });
       invia('saveSettings', { settings:impostazioniAttuali() });
     }
   }
