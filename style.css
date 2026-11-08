@@ -83,7 +83,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut)
 .row .ico{font-size:26px;width:36px;text-align:center;flex:none}
 .row .mid{flex:1;min-width:0;display:flex;flex-direction:column}
 .row .mid b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:650}
-.row .mid small{color:var(--mut);font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .mid small{color:var(--mut);font-size:13.5px;line-height:1.3}
 .row .amt{font-weight:750;white-space:nowrap}
 .row.rimb{background:transparent;border:1px dashed var(--line)}
 .row .chev{color:var(--mut);font-size:24px}
@@ -200,3 +200,17 @@ a.btn{text-decoration:none}
 .icone-grid button span { font-size: 26px; line-height: 1.1; }
 .icone-grid button small { font-size: 11px; opacity: .8; text-align: center; line-height: 1.15; }
 .icone-grid button.on { border-color: currentColor; }
+
+/* attesa del foglio e accesso */
+.spinner{width:34px;height:34px;margin:18px auto 6px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--acc);animation:gira 1s linear infinite}
+@keyframes gira{to{transform:rotate(360deg)}}
+/* pulsante + : compare quando i pulsanti rapidi escono dallo schermo */
+.fab{transition:transform .2s ease,opacity .2s ease}
+.fab.nascosto{transform:scale(.4);opacity:0;pointer-events:none}
+/* iniziali di due lettere (Fe, Fr) */
+.av.due{font-size:11.5px;letter-spacing:-.02em}
+@media (prefers-reduced-motion:reduce){.spinner{animation-duration:3s}.fab{transition:none}}
+.cerca{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:0 12px;margin:10px 0 12px}
+.cerca input{border:0;background:transparent;padding:12px 0}
+.cerca input:focus{outline:none}
+.cerca:focus-within{border-color:var(--acc)}
