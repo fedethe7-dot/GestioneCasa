@@ -1,11 +1,12 @@
 'use strict';
 /* =========================================================
-   Gestione Casa — versione 1
-   Per ora i dati restano su questo telefono (localStorage).
-   Nel prossimo passo: foglio Google + accesso con Google.
+   Gestione Casa
+   Dati nel foglio Google (Apps Script) con accesso Google o con la
+   chiave di sistema dell'hub "Le mie app". Sul telefono resta una
+   copia per aprire subito e per lavorare anche senza rete.
    ========================================================= */
 
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.9.0';
 const LS_KEY = 'gestioneCasa.v1';
 const MESI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MESI_B = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
@@ -79,7 +80,7 @@ function statoIniziale(){
 
 /* ---------- Stato ---------- */
 let S;
-let ui = { view:'home', houseId:null, tab:'spese', filtro:'tutte', year:null, pareggi:[] };
+let ui = { view:'home', houseId:null, tab:'spese', filtro:'tutte', year:null, pareggi:[], mesi:3, cerca:'' };
 let ed = null;          // dati del pannello aperto
 let sheetOpen = false;
 let skipPop = 0;
@@ -87,8 +88,11 @@ let SESS = null, coda = [], statoSync = '', inviando = false;
 const A = {}; window.A = A;
 
 function carica(){
-  try { const raw = localStorage.getItem(LS_KEY); S = raw ? JSON.parse(raw) : statoIniziale(); }
+  let raw = null;
+  try { raw = localStorage.getItem(LS_KEY); S = raw ? JSON.parse(raw) : statoIniziale(); }
   catch(e){ S = statoIniziale(); }
+  // copie salvate dalle versioni precedenti: se contengono dati, valgono come già sincronizzate
+  if (raw && S && !S.syncAt && ((S.expenses||[]).length || (S.transfers||[]).length)) S.syncAt = 1;
   // sicurezza: campi mancanti
   const base = statoIniziale();
   for (const k of Object.keys(base)) if (S[k] == null) S[k] = base[k];
@@ -128,7 +132,12 @@ const isBolletta = e => cat(e.cat).group === 'bollette';
 /* Voci meno usate: nella nuova spesa stanno dentro "Altro", come le bollette dentro "Bollette" */
 const SOTTO_ALTRO = ['altro', 'medico', 'pulizie', 'arredamento', 'abbigliamento'];
 const gruppo = c => (c && c.group) || (c && SOTTO_ALTRO.includes(c.id) ? 'altro' : null);
-function avatar(id){ const p = persona(id); return `<span class="av" style="background:${esc(p.color)}">${esc((p.name||'?')[0].toUpperCase())}</span>`; }
+function iniziali(id){
+  const nome = (persona(id).name || '?').trim(), i1 = nome[0].toUpperCase();
+  const doppia = S.people.some(p => p.id!==id && (p.name||'').trim()[0]?.toUpperCase() === i1);
+  return doppia ? i1 + (nome[1] || '').toLowerCase() : i1;
+}
+function avatar(id){ const p = persona(id), t = iniziali(id); return `<span class="av${t.length>1?' due':''}" style="background:${esc(p.color)}">${esc(t)}</span>`; }
 
 function dividiUguale(tot, ids){
   const out = {}; const n = ids.length; if (!n) return out;
@@ -169,10 +178,27 @@ function pareggia(b){
 /* ---------- Disegno delle schermate ---------- */
 function render(){
   const app = $('#app');
-  if (ONLINE && !SESS){ app.innerHTML = vLogin(); mostraBottoneGoogle(); return; }
+  if (ONLINE && !SESS){
+    app.innerHTML = vLogin();
+    // con la chiave dell'hub si entra da soli: il pulsante Google compare solo se la chiave non basta
+    if (!chiaveHub() || chiaveFallita) mostraBottoneGoogle();
+    return;
+  }
+  // primo avvio su questo telefono: aspetto il foglio invece di mostrare una casa vuota inventata
+  if (ONLINE && !S.syncAt){ app.innerHTML = vCaricamento(); return; }
   if (ui.view==='house' && casa(ui.houseId)) app.innerHTML = vCasa();
   else if (ui.view==='settings') app.innerHTML = vImpostazioni();
   else { ui.view='home'; app.innerHTML = vHome(); }
+  osservaFab();
+}
+let fabObs = null;
+function osservaFab(){
+  if (fabObs){ fabObs.disconnect(); fabObs = null; }
+  const fab = $('#fab'), quick = $('.quick');
+  if (!fab) return;
+  if (!quick || !('IntersectionObserver' in window)){ fab.classList.remove('nascosto'); return; }
+  fabObs = new IntersectionObserver(([e]) => fab.classList.toggle('nascosto', e.isIntersecting), { rootMargin:'-60px 0px 0px 0px' });
+  fabObs.observe(quick);
 }
 function vai(view, extra){
   Object.assign(ui, { view }, extra||{});
@@ -186,6 +212,17 @@ function header(titolo, destra='', indietro=false){
 function banner(){
   if (ONLINE) return '';
   return `<div class="banner">📱 Versione di prova: i dati restano solo su questo telefono. Il collegamento al foglio Google arriva nel prossimo passo.</div>`;
+}
+
+function vCaricamento(){
+  const errore = statoSync==='offline' || statoSync==='errore';
+  return `<main class="login"><div class="login-box">
+    <img src="icon.svg" alt="" class="login-logo">
+    <h1>Gestione Casa</h1>
+    ${errore
+      ? `<p class="mut">Il foglio Google non risponde.<br>Controlla la connessione e riprova.</p><button class="btn full" onclick="A.sincronizza()">🔄 Riprova</button>`
+      : `<div class="spinner" aria-hidden="true"></div><p class="mut">Carico le spese dal foglio…</p>`}
+  </div></main>`;
 }
 
 /* Home: le finestrelle delle case */
@@ -219,7 +256,7 @@ function vCasa(){
   const tab = (k,e,l) => `<button class="${ui.tab===k?'on':''}" onclick="A.tab('${k}')"><span>${e}</span>${l}</button>`;
   return header(h.emoji+' '+h.name, '', true)
     + `<main class="wrap pb">${corpo}</main>
-       <button class="fab" onclick="A.nuovaSpesa()" aria-label="Nuova spesa">＋</button>
+       ${ui.tab==='spese' ? `<button class="fab nascosto" id="fab" onclick="A.nuovaSpesa()" aria-label="Nuova spesa">＋</button>` : ''}
        <nav class="tabs">${tab('spese','📋','Spese')}${tab('saldi','⚖️','Saldi')}${tab('insight','📊','Insight')}</nav>`;
 }
 
@@ -244,26 +281,46 @@ function tSpese(h){
     <div class="chips-inline"><span>🛒 ${euro(somma(em.filter(e=>e.cat==='spesa')))}</span><span>💡 ${euro(somma(em.filter(isBolletta)))}</span><span>🔧 ${euro(somma(em.filter(e=>e.cat!=='spesa'&&!isBolletta(e))))}</span></div></div>`;
   const filtri = [['tutte','Tutte'],['spesa','🛒 Spesa'],['bollette','💡 Bollette'],['altre','🔧 Altre'],['rimborsi','↔️ Rimborsi']]
     .map(([k,l]) => `<button class="chip ${ui.filtro===k?'on':''}" onclick="A.filtro('${k}')">${l}</button>`).join('');
-
+  const cerca = `<label class="cerca"><span aria-hidden="true">🔍</span><input type="search" placeholder="Cerca: idraulico, Beatrice, lampadine…" value="${esc(ui.cerca)}" oninput="A.cerca(this.value)" enterkeyhint="search"></label>`;
+  return quick + riepilogo + `<div class="chips">${filtri}</div>${cerca}<div class="list" id="lista-spese">${listaSpese(h)}</div>`;
+}
+function testoRicerca(o, t){
+  const parti = t==='e' ? [o.desc, cat(o.cat).name, persona(o.payer).name, ...Object.keys(o.shares||{}).map(k => persona(k).name), euro(o.amount)]
+                       : ['rimborso', persona(o.from).name, persona(o.to).name, euro(o.amount)];
+  return parti.join(' ').toLowerCase();
+}
+function listaSpese(h){
   let items = [];
   if (ui.filtro!=='rimborsi')
     items = S.expenses.filter(e => e.houseId===h.id && filtroOk(e)).map(e => ({ t:'e', d:e.date, c:e.createdAt||0, o:e }));
   if (ui.filtro==='tutte' || ui.filtro==='rimborsi')
     items = items.concat(S.transfers.filter(t => t.houseId===h.id).map(t => ({ t:'t', d:t.date, c:t.createdAt||0, o:t })));
+  const parole = ui.cerca.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (parole.length) items = items.filter(x => { const tx = testoRicerca(x.o, x.t); return parole.every(w => tx.includes(w)); });
   items.sort((a,b) => a.d<b.d ? 1 : a.d>b.d ? -1 : b.c-a.c);
 
+  // totali dei mesi calcolati una volta sola
+  const totMese = {};
+  items.forEach(x => { if (x.t==='e'){ const m = x.d.slice(0,7); totMese[m] = (totMese[m]||0) + x.o.amount; } });
+  // all'apertura solo gli ultimi mesi (con anni di spese la lista sarebbe lentissima); con un filtro si vede tutto
+  const mesiTutti = [...new Set(items.map(x => x.d.slice(0,7)))];
+  const limite = ui.filtro==='tutte' && !parole.length && mesiTutti.length > ui.mesi ? mesiTutti[ui.mesi-1] : null;
+  const visibili = limite ? items.filter(x => x.d.slice(0,7) >= limite) : items;
+  const nascosti = items.length - visibili.length;
+
   let html = '', cur = '';
-  items.forEach(it => {
+  visibili.forEach(it => {
     const m = it.d.slice(0,7);
     if (m!==cur){
       cur = m;
-      const mt = somma(items.filter(x => x.t==='e' && x.d.startsWith(m)).map(x => x.o));
-      html += `<div class="month"><span>${MESI[Number(m.slice(5))-1]} ${m.slice(0,4)}</span><span>${mt?euro(mt):''}</span></div>`;
+      html += `<div class="month"><span>${MESI[Number(m.slice(5))-1]} ${m.slice(0,4)}</span><span>${totMese[m]?euro(totMese[m]):''}</span></div>`;
     }
     html += it.t==='e' ? rigaSpesa(it.o) : rigaRimborso(it.o);
   });
-  if (!items.length) html = `<div class="empty">Ancora niente qui.<br>Usa i pulsanti sopra per aggiungere una spesa.</div>`;
-  return quick + riepilogo + `<div class="chips">${filtri}</div><div class="list">${html}</div>`;
+  if (nascosti) html += `<button class="btn ghost full" onclick="A.altriMesi()">Mostra mesi precedenti (${nascosti} ${nascosti===1?'voce':'voci'})</button>`;
+  if (!items.length) html = parole.length ? `<div class="empty">Nessuna spesa trovata per «${esc(ui.cerca.trim())}».</div>`
+    : `<div class="empty">Ancora niente qui.<br>Usa i pulsanti sopra per aggiungere una spesa.</div>`;
+  return html;
 }
 
 function etichettaDivisione(e){
@@ -459,7 +516,9 @@ window.addEventListener('popstate', () => {
 });
 
 /* ---------- Navigazione ---------- */
-A.apriCasa = id => vai('house', { houseId:id, tab:'spese', filtro:'tutte', year:null });
+A.apriCasa = id => vai('house', { houseId:id, tab:'spese', filtro:'tutte', year:null, mesi:3, cerca:'' });
+A.altriMesi = () => { ui.mesi += 6; render(); };
+A.cerca = v => { ui.cerca = v; const l = $('#lista-spese'), h = casa(ui.houseId); if (l && h) l.innerHTML = listaSpese(h); };
 A.apriImpostazioni = () => vai('settings');
 A.indietro = () => { ui.view = 'home'; render(); window.scrollTo(0,0); skipPop++; try { history.back(); } catch(e){ skipPop--; } };
 A.tab = k => { ui.tab = k; render(); window.scrollTo(0,0); };
@@ -804,21 +863,27 @@ async function sincronizza(){
   await svuotaCoda();
   if (coda.length || !SESS) return;            // offline: si riprova più tardi
   statoSync = 'sync'; aggiornaStato();
+  if (!S.syncAt) render();
   try {
     const j = await api('load');
     applicaServer(j);
     statoSync = 'ok';
   } catch(e){
     if (e.code==='NO_LOGIN' || e.code==='NON_AUTORIZZATO') return sessioneScaduta();
-    statoSync = 'offline';
+    statoSync = e.code==='RETE' ? 'offline' : 'errore';
+    if (e.code!=='RETE') console.error('Caricamento dal foglio non riuscito:', e);
+    if (!S.syncAt) render();
   }
   aggiornaStato();
 }
 function applicaServer(j){
   Object.assign(SESS, { me:j.me, admin:j.admin, email:j.email, sheetUrl:j.sheetUrl }); salvaSess();
-  const st = j.state;
+  const st = j.state || {};
+  const lista = (v, prima) => Array.isArray(v) && v.length ? v : prima;
   if (st.settings){
-    S.people = st.settings.people; S.houses = st.settings.houses; S.categories = st.settings.categories;
+    S.people = lista(st.settings.people, S.people);
+    S.houses = lista(st.settings.houses, S.houses);
+    S.categories = lista(st.settings.categories, CATEGORIE_BASE.map(c => ({ ...c, base:true })));
     // categorie che arrivano dalle altre app: se mancano nel foglio le aggiunge l'amministratore, da solo
     const mancanti = j.admin ? CATEGORIE_APP.filter(id => !S.categories.some(c => c.id===id)) : [];
     // "Progetti casa" aveva la stessa lampadina delle Bollette: ora ha il martello
@@ -835,7 +900,9 @@ function applicaServer(j){
     }
   }
   else if (j.admin) invia('saveSettings', { settings:impostazioniAttuali() });   // primo avvio: il foglio prende le impostazioni dell'app
-  S.expenses = st.expenses; S.transfers = st.transfers; S.settings.me = j.me;
+  S.expenses = Array.isArray(st.expenses) ? st.expenses : []; S.transfers = Array.isArray(st.transfers) ? st.transfers : [];
+  if (j.me) S.settings.me = j.me;
+  S.syncAt = Date.now();
   if (ui.view==='house' && !casa(ui.houseId)) ui.view = 'home';
   salva(); render();
 }
@@ -870,8 +937,9 @@ function vLogin(){
   return `<main class="login"><div class="login-box">
     <img src="icon.svg" alt="" class="login-logo">
     <h1>Gestione Casa</h1>
-    <p class="mut" id="login-msg">${conChiave ? (chiaveHub() ? 'Entro con la chiave di sistema…' : 'Entra con la <b>chiave di sistema</b> (la stessa delle altre app).') : 'Entra con il tuo account Google.<br>Possono entrare solo le persone autorizzate.'}</p>
-    ${conChiave ? `<div id="chiave-box" style="${chiaveHub() ? 'display:none' : ''}">
+    ${conChiave && chiaveHub() && !chiaveFallita ? '<div class="spinner" aria-hidden="true"></div>' : ''}
+    <p class="mut" id="login-msg">${conChiave ? (chiaveHub() && !chiaveFallita ? 'Entro con la chiave di sistema…' : 'Entra con la <b>chiave di sistema</b> (la stessa delle altre app).') : 'Entra con il tuo account Google.<br>Possono entrare solo le persone autorizzate.'}</p>
+    ${conChiave ? `<div id="chiave-box" style="${chiaveHub() && !chiaveFallita ? 'display:none' : ''}">
       <div class="chips wrapc" style="justify-content:center;margin:14px 0 4px">${[['Federico','Federico'],['Mamma','Mamma'],['Sorella','Beatrice']].map(([n,t]) => `<button class="chip${chi===n ? ' on' : ''}" data-n="${n}" onclick="A.sceltaChi('${n}')">${t}</button>`).join('')}</div>
       <input id="chiave-in" type="password" maxlength="40" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" placeholder="Chiave di sistema" style="margin-top:10px">
       <button class="btn full" onclick="A.entraChiave()">🔑 Entra</button>
@@ -914,11 +982,13 @@ function chiHub(){
   return p ? p.id : n;
 }
 const conTimeout = (p, ms=20000) => Promise.race([p, new Promise((_, ko) => setTimeout(() => { const e = new Error('RETE'); e.code = 'RETE'; ko(e); }, ms))]);
-let entrando = false;
+let entrando = false, chiaveFallita = false;
 async function entraConChiave(chiave = chiaveHub()){
   if (!ONLINE || !chiave || entrando) return false;
   entrando = true;
-  const el = $('#login-err'); if (el) el.textContent = 'Accesso in corso…';
+  // il messaggio serve solo quando la chiave è stata scritta a mano (in automatico c'è già "Entro con la chiave…")
+  const el = $('#login-err'), aMano = $('#chiave-box') && $('#chiave-box').style.display !== 'none';
+  if (el) el.textContent = aMano ? 'Accesso in corso…' : '';
   try {
     const j = await conTimeout(api('loginChiave', { chiave, chi:chiHub() }));
     try { localStorage.setItem('eco.chiave', chiave); } catch(e){}   // vale anche per l'hub e le altre app
@@ -933,8 +1003,10 @@ async function entraConChiave(chiave = chiaveHub()){
             : e.code==='NON_AUTORIZZATO' ? 'Scegli chi sei qui sopra e riprova.'
             : e.code==='RETE' ? 'Nessuna risposta dal foglio: controlla la connessione e riprova.'
             : 'Accesso non riuscito ('+(e.code||e.message)+').';
+    chiaveFallita = true; mostraBottoneGoogle();
     const box = $('#chiave-box'); if (box) box.style.display = '';
     const msg = $('#login-msg'); if (msg) msg.innerHTML = 'Entra con la <b>chiave di sistema</b> (la stessa delle altre app).';
+    document.querySelector('.login-box .spinner')?.remove();
     const err = $('#login-err'); if (err) err.textContent = m;
     return false;
   } finally { entrando = false; }
