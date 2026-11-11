@@ -32,3 +32,9 @@ e pubblicare una nuova versione.
 - Iniziali di due lettere quando due persone iniziano con la stessa (Fe, Fr); righe delle bollette non più tagliate; barra del telefono chiara in modalità chiara.
 
 Nota: lo script principale del foglio (Code.gs) non è in questo repository: ci sono solo il codice dell'app e `apps-script/Chiave.gs`.
+
+## Stampa (app per la mamma)
+
+Nella cartella `stampa/`: app per stampare bollette e foto dal telefono.
+Il file resta sul telefono: nessun dato viene inviato o salvato online.
+Indirizzo: https://fedethe7-dot.github.io/GestioneCasa/stampa/

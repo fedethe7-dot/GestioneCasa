@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0E1116">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; manifest-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Stampa</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="app">
+
+  <header class="top">
+    <div>
+      <h1>Stampa</h1>
+      <p class="sub">Bollette e foto</p>
+    </div>
+  </header>
+
+  <!-- PASSO 1: scelta file -->
+  <section id="stepPick" class="card big-card">
+    <div class="emoji">📄</div>
+    <button id="btnPick" class="btn btn-primary btn-xl">Scegli la bolletta</button>
+    <p class="hint">oppure una foto</p>
+    <input id="file" type="file" accept="application/pdf,image/*" hidden>
+  </section>
+
+  <!-- PASSO 2: anteprima e stampa -->
+  <section id="stepPreview" class="hidden">
+    <div class="card file-card">
+      <div class="file-name" id="fileName"></div>
+      <div class="file-info" id="fileInfo"></div>
+    </div>
+    <div id="preview" class="preview"></div>
+    <button id="btnPrint" class="btn btn-primary btn-xl sticky" disabled>🖨️  STAMPA</button>
+    <div class="card help">
+      Dopo <b>STAMPA</b>: tocca l'icona <b>della stampante</b> 🖨️ in alto a destra.
+    </div>
+    <button id="btnOther" class="btn btn-ghost">Cambia file</button>
+  </section>
+
+  <div id="busy" class="busy hidden"><div class="spinner"></div><span id="busyText">Preparo il documento…</span></div>
+  <div id="error" class="card error hidden"></div>
+
+  <!-- Inchiostro -->
+  <section id="inkCard" class="card ink hidden">
+    <div>
+      <div class="ink-title">Inchiostro</div>
+      <div class="ink-sub">Quanto ne resta</div>
+    </div>
+    <a id="btnInk" class="btn btn-small" target="_blank" rel="noopener">Guarda</a>
+  </section>
+
+  <footer class="foot">v<span id="ver"></span></footer>
+</main>
+
+<!-- area di stampa: solo le pagine, nient'altro -->
+<div id="printArea" aria-hidden="true"></div>
+
+<script src="lib/pdf.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
